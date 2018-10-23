@@ -1,0 +1,424 @@
+---
+title: "Prevendo Despesas Hospitalares_v2"
+author: "Evanil Tiengo Junior"
+output: 
+  word_document: 
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introdução
+
+Este projeto faz parte da formação Big Data Analytics com R e Microsoft Azure da DSA. Para esta análise, é usado um conjunto de dados simulando despesas médicas hipotéticas para um conjunto de pacientes espalhados por 4 regiões do Brasil. Esse dataset possui 1.338 observações e 7 variáveis. Todo o projeto será descrito de acordo com suas etapas.
+
+##  Objetivos:
+
+1)	Empregar técnicas de análise para verificar as correlações entre as variáveis;
+
+2)	Criar um modelo que faça as previsões, quanto aos gastos de um usuário, quando receber novos conjuntos de dados;
+
+3)	Analisar as métricas do modelo e tirar conclusões o mesmo.
+
+```{r }
+# Local armazenamento
+setwd("C:/Users/evanil.tiengo/Desktop/Cursos/DSA/Big Data Analytics com R e Microsoft Azure Machine Learning/Mini-Projeto03")
+getwd()
+```
+
+```{r }
+# Pacotes utilizados.
+#install.packages("dplyr")
+library(dplyr)
+#install.packages("tidyr")
+library(tidyr)
+#install.packages("ggplot2")
+library(ggplot2)
+#install.packages("psych")
+library(psych)
+#install.packages("corrplot")
+library(corrplot)
+#install.packages("caTools")
+library(caTools)
+#install.packages("car")
+library(car)
+```
+
+##  Etapa 1 - Coletando os Dados
+
+Os dados foram fornecidos pela DSA. Sendo assim preciso realizar a carga. Antes de realizar a carga do arquivo é necessário saber o formato do mesmo, que neste caso é .csv!
+
+```{r}
+Despesas <- read.csv("C:/Users/evanil.tiengo/Desktop/Cursos/DSA/Big Data Analytics com R e Microsoft Azure Machine Learning/Mini-Projeto03/despesas.csv")
+```
+
+##  Etapa 2 - EDA (Exploratory Data Analysis)
+
+```{r}
+# Com o comando abaixo é possivel identificar as classes de cada variavel
+str(Despesas)
+
+# Para a previsão irei utilizar a Regressão Linear Multipla. Sendo assim, irei transformar algumas variaveis em numericas. Essa transformação é possivel pois as variaveis não numericas são fatores (Têm niveis)
+
+# $sexo: mulher = 1; homem = 2
+Despesas$sexo <- as.numeric(Despesas$sexo)
+
+# $fumante: sim = 1; não = 2
+Despesas$fumante <- as.numeric(Despesas$fumante)
+
+# $regiao: nordeste = 1; norte = 2; sudeste = 3; sul = 4
+Despesas$regiao <- as.numeric(Despesas$regiao)
+
+str(Despesas)
+
+
+# Identificação de NA`s e Vazios!
+any(is.na(Despesas))
+any(Despesas == "")
+# False significa que não existe nenhum campo com NA ou Vazio!
+
+# Abaixo temos um resumo dos dados
+str(Despesas)
+# Aqui podemos tirar algumas observações:
+```
+
+Apos os testes acima, conclui-se que os dados estão ok!
+
+```{r}
+# Medidas da tendencia central da variavel $gastos
+ggplot(Despesas, aes(gastos)) +
+geom_histogram(color = "#429FFF", fill = "#429FFF")
+```
+
+Pelo histograma podemos identificar uma distribuição Unimodal e um enviesamento a direita (Mediana < Media). Com isso podemos observar que a distribuição dos dados concentra-se em torno dos valores mínimos. Como pode ser observado no resumo, o 3rd Quartil que representa 75% dos valores, é igual a 16640 reais. Isso quer dizer que 75% dos gastos são inferiores a 16640 reais. Vamos fazer um boxplot para confirmar.
+
+```{r}
+boxplot(Despesas$gastos)
+```
+Como pode ser observado temos muitos outliers superiores. 
+
+```{r}
+# O valor do primeiro outlier é dado pela eq: Q1 + (1.5*IQR)
+# O IQR é o Q3 – Q1
+IQR = 16640 - 4740
+IQR
+Outlier_Superior = 16640 + (1.5*IQR)
+Outlier_Superior
+#34490
+```
+Como os valores dos outliers são elevados não irei retira-los do modelo nesse momento. Mais abaixo farei um teste retirando os outliers para saber a influência deles.
+
+Gráfico e Tabela de contingência para analisar a distribuição das variáveis
+```{r}
+# $idade: distribuição uniforme
+hist(Despesas$idade, xlab = "idade")
+count(Despesas, idade)
+
+# $sexo: distribuição uniforme
+hist(Despesas$sexo,  xlab = "sexo")
+round(prop.table(table(Despesas$sexo)) * 100, digits = 1) 
+# Em termos de porcentagem temos:
+# mulher = 50.5%
+# homem = 49.5%
+
+# $bmi: distribuição simetrica. 
+hist(Despesas$bmi,  xlab = "bmi (Massa corporal)")
+count(Despesas, bmi)
+```
+Os dados de bmi (massa corporal) fornecidos tendem a centralidade e os valores são mais comuns entre 25 a 35 bmi.
+
+```{r}
+# $filhos: distribuição enviesada a direita.
+hist(Despesas$filhos,  xlab = "filhos")
+table(Despesas$filhos)
+```
+Os dados fornecidos tendem a ter um enviesamento a direita, o que indica que a distribuição dos dados concentra-se em torno dos valores mínimos. Em termos de porcentagem temos: 
+0 filhos -> 574 / 1338 = 42,9%
+1 filhos -> 324 / 1338 = 24,2%
+2 filhos -> 240 / 1338 = 17,9%
+3 filhos -> 157 / 1338 = 11,8%
+4 filhos ->  25 / 1338 =  1,9%
+5 filhos ->  18 / 1338 =  1,3%
+
+```{r}
+# $fumante: distribuição desequilibrada.
+hist(Despesas$fumante,  xlab = "fumante")
+table(Despesas$fumante)
+round(prop.table(table(Despesas$fumante)) * 100, digits = 1) 
+```
+Em termos de porcentagem temos:
+Não Fumante -> 1064 / 1338 = 79,5%
+Fumante     ->  274 / 1338 = 20,5%
+```{r}
+# $regiao: distribuição uniforme
+plot(Despesas$regiao,  xlab = "região")
+table(Despesas$regiao)
+
+```
+
+Explorando relacionamento entre as variáveis: 
+Matriz de Correlação
+```{r}
+Data_Cor <- cor(Despesas)
+Data_Cor
+```
+```{r}
+# Visualizando relacionamento entre as variáveis: 
+corrplot(Data_Cor, method = "circle")
+```
+O objetivo do estudo da correlação é determinar (mensurar) o grau de relacionamento entre duas variáveis. Existem algumas associações interessantes. 
+Pode-se destacar que a correlação entre as variáveis é positiva e moderada. Por ordem de força temos a fumante, idade e bmi. Estas associações implicam que, à medida que elas aumentam, o custo esperado do seguro saúde sobe!
+
+## Etapa 3 - Modelagem
+
+Treinando o Modelo. 
+No modelo é usado a Regressão Linear Múltipla. 
+Formula da Regressão Linear múltiplas Estimada: y = a + b0x1 + b1x2 + Xnxn
+
+Criando amostras randômicas:
+
+```{r}
+# Criando amostras randomicas
+set.seed(101)
+Amostra <- sample.split(Despesas, SplitRatio = 0.70)
+
+# Treinamos o nosso modelo nos dados de treino
+# Dados_Treino
+Dados_Treino <- subset(Despesas, Amostra == TRUE)
+summary(Dados_Treino)
+# Fazemos as predições nos dados de teste
+# Dados_Teste
+Dados_Teste <- subset(Despesas, Amostra == FALSE)
+
+# O modelo utilizado aqui é o de Regresão Linear. No modelo1 estou considerando
+# todas as variaveis do dataset.
+Modelo_v1 <- lm(gastos ~ ., Despesas)
+```
+
+## Etapa 4 -Interpretando o Modelo
+
+Nesta etapa iremos analisar o resumo dos parâmetros do Modelo_v1.
+```{r}
+summary(Modelo_v1)
+```
+
+Avaliando os parametros
+O primeiro parametro a ser analisado é o nivel de significancia de acordo com o p-value. O nível de significância é o limite para o p-valor, abaixo do qual assume-se que a hipótese nula é falsa. O p-valor é a probabilidade de se obter uma estatística de teste igual ou mais extrema que a estatística observada a partir de uma amostra de uma população quando ela é verdadeira. Isto significa que o nível de significância é a probabilidade de se rejeitar incorretamente a hipótese nula quando ela é verdadeira. O nível de significância corresponde ao erro do tipo I, cujos valores mais comuns são 10%, 5% e 1%. Iremos considerar o de 10%.
+Pode-se observar que as variaveis idade, bmi, filhos, fumante, regiao têm o nivel de significancia < 10%. Ja as outras variaveis não influenciam tanto no modelo. Nesse sentido teremos que eleaborar outro modelo, retirando as variaveis que não influenciam ou pouco influenciam na variavel dependente. Retirando esssas variveis os valores das variaveis significativas e da intercptação serão alterados.
+
+```{r}
+Modelo_v2 <- lm(gastos ~ idade + bmi + filhos + fumante + regiao, Despesas)
+summary(Modelo_v2)
+```
+Comparando os parametros dos dois modelos conforme presuposicoes abaixo:
+a) Multicolinearidade
+```{r}
+vif(Modelo_v1)
+vif(Modelo_v2)
+```
+Não ha multicolinearidade nos dois moelos
+
+b) Parcimônia
+No Modelo_v1 temos algumas variaveis que não contribuem para o modelo. Sendo asim o Modelo_v2 ganha nesse ponto
+
+c) Residuais
+```{r}
+Res_1 <- residuals(Modelo_v1)
+Res_2 <- residuals(Modelo_v2)
+
+# Convertendo o objeto para um dataframe
+Res_1 <- as.data.frame(Res_1)
+head(Res_1)
+ggplot(Res_1, aes(Res_1)) +  
+geom_histogram(bins = 20, fill = 'blue')
+
+Res_2 <- as.data.frame(Res_2)
+head(Res_2)
+ggplot(Res_2, aes(Res_2)) +  
+geom_histogram(bins = 20, fill = 'blue')
+```
+O histograma apresenta uma distribuição parecida com a normal, o que indica
+que a média entre os valores previstos e os valores observados é próximo de 
+0 (o que é bom).
+
+d) Os valores de correlação são muito proximos.
+
+e) p-value são iguais
+
+Resultado:
+Baseado nos itens acima seguirei com o Modelo_v2.
+
+Iterpretação dos parametros:
+
+Coefficients:
+Como pode ser observado os valores estimados mudaram no Modelo_v2. Com isso temos a equação da regressão linear multipla:
+gastos = -35623.28 + 257.07idade + 336.60bmi + 467.64filhos + 23853.93fumante 
+                   -297.97regiao 
+
+Exemplo: Linha 20 do dataset Despesas
+```{r}
+Despesas[20,]
+```
+gastos_20 = -35623.28 + 257.07(30) + 336.60(35.3) + 467.64(0) + 23853.93(2) 
+                   -297.97(3)
+                   
+```{r}
+gastos_20 = -35623.28 + 257.07*30 + 336.60*35.3 + 467.64*0 + 23853.93*2 -297.97*3
+gastos_20
+```
+                   
+gastos_20 = 30784.75
+gastos real = 36837.47  --> Taxa de acerto de 83,6%
+
+Residual standard error:
+Temos um dp = 6061 dos residuos, e
+um grau de liberdade = 1332
+
+Multiple R-squared: 
+Quanto mais proximo de 1 melhor. No nosso caso temos um R^2 = 0.7504.  o que indica que 75,04% da variavel dependente consegue ser explicada pelas variaveis explanatorias presentes no modelo.
+
+Adjusted R-squared: 
+Ele deve ser menor que R^2. No nosso caso temos 0.7495.
+
+F-statistic:
+Esse teste obtém os parâmetros do nosso modelo e compara com um modelo que tenha menos parâmetros
+
+p-value:
+Temos uma probabilidade < 2.2e-16 que a variável não seja relevante. 
+
+## Etapa 5 - Previsão
+
+Prevendo despesas médicas
+Usando a função predict conseguimos realizar a previsão do modelo baseado nas
+no arquivo de teste
+```{r}
+Previsao_v2 <- predict(Modelo_v2, Dados_Teste)
+# Abaixo temos o cabeçalho das 10 primeiras previssões
+head(Previsao_v2, 10)
+
+# Visualizando os valores previstos e observados
+Resultados <- cbind(Dados_Teste$gastos, Previsao_v2) 
+colnames(Resultados) <- c('Real', 'Previsto')
+Resultados <- as.data.frame(Resultados)
+# Estamos prevendo os gastos e eles não podem ser negativos. Vamos verificar
+min(Resultados)
+# Tratando os valores negativos com os valores minimos
+Trata_min <- function(x){
+  if  (x < 0){
+    return(1122)
+  }else{
+    return(x)
+  }
+}
+# Aplicando a função para tratar valores negativos em nossa previsão
+Resultados$Previsto <- sapply(Resultados$Previsto, Trata_min)
+Resultados$Previsto
+```
+
+## Etapa 6 - Avaliando a Performance
+
+Calculando o erro médio:
+Quão distantes seus valores previstos estão dos valores observados. Serve para avaliar as versões do modelo
+```{r}
+# MSE
+mse <- mean((Resultados$Real - Resultados$Previsto)^2)
+print(mse)
+```
+
+```{r}
+# RMSE
+rmse <- mse^0.5
+rmse
+```
+
+```{r}
+# Calculando R Squared
+SSE = sum((Resultados$Previsto - Resultados$Real)^2)
+SST = sum((mean(Despesas$gastos) - Resultados$Real)^2)
+```
+
+```{r}
+# R-Squared
+# Ajuda a avaliar o nível de precisão do nosso modelo. Quanto maior, melhor, sendo 1 o valor ideal.
+R2 = 1 - (SSE/SST)
+R2
+```
+
+
+## Etapa 7 - Otimização do Modelo
+
+Modelo_v3:
+Retirando as observações de outlier. 
+```{r}
+Despesas_v3 <- Despesas 
+Despesas_v3 <- subset(Despesas_v3, Despesas_v3$gastos < 34490)
+summary(Despesas_v3)
+
+Modelo_v3 <- lm(gastos ~ ., Despesas_v3) 
+summary(Modelo_v3)
+```
+Comparação:
+Modelo_v1 -> Adjust R-squared:  0.7493 e Multiple R-squared: 0.7505
+Modelo_v2 -> Adjust R-squared:  0.7495 e Multiple R-squared: 0.7504
+Modelo_v3 -> Adjust R-squared:  0.6002 e Multiple R-squared: 0.6022
+
+
+Fazendo a previsão com o Modelo_v1
+
+```{r}
+Previsao_v1 <- predict(Modelo_v1, Dados_Teste)
+# Abaixo temos o cabeçalho das 10 primeiras previssões
+head(Previsao_v1, 10)
+
+# Visualizando os valores previstos e observados
+Resultados <- cbind(Dados_Teste$gastos, Previsao_v1) 
+colnames(Resultados) <- c('Real', 'Previsto')
+Resultados <- as.data.frame(Resultados)
+# Estamos prevendo os gastos e eles não podem ser negativos. Vamos verificar
+min(Resultados)
+# Tratando os valores negativos com os valores minimos
+Trata_min <- function(x){
+  if  (x < 0){
+    return(1122)
+  }else{
+    return(x)
+  }
+}
+# Aplicando a função para tratar valores negativos em nossa previsão
+Resultados$Previsto <- sapply(Resultados$Previsto, Trata_min)
+Resultados$Previsto
+```
+```{r}
+# MSE
+mse <- mean((Resultados$Real - Resultados$Previsto)^2)
+print(mse)
+# RMSE
+rmse <- mse^0.5
+rmse
+# Calculando R Squared
+SSE = sum((Resultados$Previsto - Resultados$Real)^2)
+SST = sum((mean(Despesas$gastos) - Resultados$Real)^2)
+# R-Squared
+# Ajuda a avaliar o nível de precisão do nosso modelo. Quanto maior, melhor, sendo 1 o valor ideal.
+R2 = 1 - (SSE/SST)
+R2
+```
+Previsão_v1 -> Multiple R-squared: 0.7611
+Previsão_v2 -> Multiple R-squared: 0.7607
+
+
+## Conclusão
+
+Neste projeto foi possível utilizar algumas técnicas de manipulação de dados, técnicas estatísticas, machine learning com a linguagem R. Foi um desafio prazeroso utilizar o R em todas as etapas do projeto. Tive dificuldades em algumas técnicas de manipulação de dados, mas com a ajuda do material fornecido pela DSA e das 
+documentações do R, consegui vencer as mesmas.
+
+Nessa perspectiva, afim de otimizar o modelo, foi realizado alguns testes manipulando o dataset, mas os resultados foram inferiores ou bem próximos do conquistado pelo Modelo_v2. Para melhorarmos o o resultado teríamos que possuir mais observações ou mais variáveis para treinar o modelo. 
+
+Baseado na comparação realizada no item anterior o melhor os Modelos v1 e v2 são 
+muito parecidos. Porém o Modelo_v2 é um pouco melhor pois possui menos variaveis 
+e tem o R ajustado um pouco maior. Neste modelo de machine learning podemos dizer 
+que 75,04% da variável dependente consegue ser explicada pelo modelo. 
+
+
