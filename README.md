@@ -1,4 +1,4 @@
-# Prevendo-Despesas-Medicas---Regress-o-Linear-Multipla
+# Prevendo_Despesas_Medicas-Regressao_Linear_Multipla
 Prevendo Despesas Medicas - Regressão Linear Multipla
 Os arquivos e dados utilizados estão dentro da pasta "Arquivo"!
 1) Dataset = despesas.csv
