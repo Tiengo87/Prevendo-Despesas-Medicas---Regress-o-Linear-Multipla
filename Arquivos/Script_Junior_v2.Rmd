@@ -419,6 +419,6 @@ Nessa perspectiva, afim de otimizar o modelo, foi realizado alguns testes manipu
 Baseado na comparação realizada no item anterior o melhor os Modelos v1 e v2 são 
 muito parecidos. Porém o Modelo_v2 é um pouco melhor pois possui menos variaveis 
 e tem o R ajustado um pouco maior. Neste modelo de machine learning podemos dizer 
-que 75,04% da variável dependente consegue ser explicada pelo modelo. 
+que 76,07% da variável dependente consegue ser explicada pelo modelo. 
 
 
